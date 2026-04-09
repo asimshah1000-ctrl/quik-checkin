@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QUIK — Driver Check-in</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0B1120;--card:#111827;--border:#1E2D45;
+  --blue:#3B82F6;--green:#22C55E;--orange:#F97316;--red:#EF4444;--purple:#A855F7;
+  --text:#F1F5F9;--muted:#64748B;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0}
+.page{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+
+/* Header */
+.hdr{text-align:center;padding:24px 0 20px}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:#fff}
+.logo span{color:var(--orange)}
+.store-badge{display:inline-block;background:linear-gradient(135deg,#1D4ED8,#7C3AED);color:#fff;border-radius:12px;padding:12px 20px;margin-top:14px;font-size:13px;font-weight:600;letter-spacing:.3px}
+.store-name{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-top:4px}
+
+/* Status Card */
+.status-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+.sc-title{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.status-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.status-row:last-child{border-bottom:none}
+.status-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.si-pending{background:#1E293B}
+.si-done{background:#16A34A20}
+.si-active{background:#3B82F620;animation:ring 1.5s ease-in-out infinite}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 #3B82F640}50%{box-shadow:0 0 0 8px transparent}}
+.status-info{flex:1}
+.status-label{font-size:13px;font-weight:600}
+.status-time{font-size:11px;color:var(--muted);margin-top:2px;font-family:monospace}
+.status-check{font-size:18px}
+
+/* Action Buttons */
+.action-section{margin-bottom:16px}
+.action-btn{width:100%;padding:18px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;transition:all .15s;letter-spacing:.3px;position:relative;overflow:hidden}
+.action-btn:active{transform:scale(.97)}
+.action-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-arrived{background:linear-gradient(135deg,var(--blue),#1D4ED8);color:#fff;box-shadow:0 4px 20px #3B82F640}
+.btn-departed{background:linear-gradient(135deg,var(--orange),#EA580C);color:#fff;box-shadow:0 4px 20px #F9731640}
+.btn-completed{background:linear-gradient(135deg,var(--green),#15803D);color:#fff;box-shadow:0 4px 20px #22C55E40}
+.btn-icon{font-size:22px}
+
+/* Driver input */
+.driver-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px}
+.driver-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:block}
+.driver-input{width:100%;background:#1E293B;border:1px solid var(--border);border-radius:9px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s}
+.driver-input:focus{border-color:var(--blue)}
+
+/* Success overlay */
+.success-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s}
+.success-overlay.show{opacity:1;pointer-events:all}
+.success-box{background:var(--card);border:1px solid #22C55E60;border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;width:90%;animation:popIn .3s ease}
+@keyframes popIn{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.success-emoji{font-size:56px;margin-bottom:14px;display:block}
+.success-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;margin-bottom:6px}
+.success-sub{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px}
+.success-close{padding:12px 28px;background:var(--green);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+
+/* Info footer */
+.info-footer{text-align:center;font-size:11px;color:var(--muted);padding-top:8px;line-height:1.8}
+.info-footer a{color:var(--blue);text-decoration:none}
+
+/* Loading */
+.loading{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+.spinner{display:inline-block;width:28px;height:28px;border:3px solid #1E2D45;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Trip selector */
+.trip-selector{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px}
+.trip-option{padding:12px 14px;background:#1E293B;border-radius:9px;margin-bottom:8px;cursor:pointer;border:2px solid transparent;transition:all .2s}
+.trip-option:last-child{margin-bottom:0}
+.trip-option.selected{border-color:var(--blue);background:#1D4ED815}
+.trip-option-title{font-size:13px;font-weight:600}
+.trip-option-sub{font-size:11px;color:var(--muted);margin-top:2px}
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="hdr">
+    <div class="logo">QUIK <span>⬡</span></div>
+    <div id="store-header">
+      <div style="height:20px"></div>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div id="main-content">
+    <div class="loading"><div class="spinner"></div><br>Loading…</div>
+  </div>
+</div>
+
+<!-- Success overlay -->
+<div class="success-overlay" id="success-ov">
+  <div class="success-box">
+    <span class="success-emoji" id="success-emoji">✅</span>
+    <div class="success-title" id="success-title">Done!</div>
+    <div class="success-sub" id="success-sub">Update saved to dashboard.</div>
+    <button class="success-close" onclick="closeSuccess()">OK</button>
+  </div>
+</div>
+
+<script>
+// ── Firebase ──────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDcyoPRjE0Fcr4bJOD9h8B_Me3zb5IdQKg",
+  authDomain: "quik-transport.firebaseapp.com",
+  databaseURL: "https://quik-transport-default-rtdb.firebaseio.com",
+  projectId: "quik-transport",
+  storageBucket: "quik-transport.firebasestorage.app",
+  messagingSenderId: "860154002421",
+  appId: "1:860154002421:web:315c836dbded51a73d3ebc"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── URL Params ────────────────────────────────────────────────
+const params  = new URLSearchParams(window.location.search);
+const STORE   = params.get('store') || '';
+const DATE    = params.get('date')  || new Date().toISOString().split('T')[0];
+
+// State
+let matchedTrips = [];
+let selectedTripId = null;
+let driverName = localStorage.getItem('quik_driver_name') || '';
+let storeState = { arr: null, dep: null, completed: false };
+
+// ── Format time now ───────────────────────────────────────────
+function nowTime() {
+  return new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
+function nowDate() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// ── Find trips for this store + today ─────────────────────────
+function init() {
+  if (!STORE) {
+    document.getElementById('main-content').innerHTML =
+      `<div class="loading" style="color:var(--red)">❌ Invalid QR code — store not found</div>`;
+    return;
+  }
+
+  document.getElementById('store-header').innerHTML = `
+    <div class="store-badge">📍 Store Check-in</div>
+    <div class="store-name">${STORE.replace('QUIK_','')}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">${DATE}</div>
+  `;
+
+  // Listen to trips in real-time
+  db.ref('trips').on('value', snap => {
+    const data = snap.val() || {};
+    matchedTrips = Object.entries(data)
+      .map(([id, t]) => ({ ...t, _id: id }))
+      .filter(t =>
+        t.date === DATE &&
+        Array.isArray(t.storeNames) &&
+        t.storeNames.includes(STORE)
+      );
+
+    if (matchedTrips.length === 0) {
+      // No trip today — show message but still allow manual check-in
+      renderNoTrip();
+    } else if (matchedTrips.length === 1) {
+      selectedTripId = matchedTrips[0]._id;
+      loadStoreState(matchedTrips[0]);
+      renderCheckIn();
+    } else {
+      // Multiple trips — show selector
+      renderTripSelector();
+    }
+  });
+}
+
+function loadStoreState(trip) {
+  if (!trip) return;
+  const st = (trip.storeTimes && trip.storeTimes[STORE]) || {};
+  storeState = {
+    arr:       st.arr       || null,
+    dep:       st.dep       || null,
+    completed: trip.status === 'Completed',
+  };
+}
+
+// ── RENDER: No trip found ─────────────────────────────────────
+function renderNoTrip() {
+  document.getElementById('main-content').innerHTML = `
+    <div class="status-card" style="text-align:center;padding:24px">
+      <div style="font-size:40px;margin-bottom:12px">📋</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">No trip scheduled</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.7">
+        No trip found for <strong>${STORE}</strong> today (${DATE}).<br>
+        Ask your supervisor to add this trip in the dashboard.
+      </div>
+    </div>
+    <div class="info-footer">
+      <a href="javascript:void(0)" onclick="forceDate()">Wrong date? Tap here</a>
+    </div>`;
+}
+
+// ── RENDER: Trip selector (multiple trips) ────────────────────
+function renderTripSelector() {
+  const options = matchedTrips.map(t => `
+    <div class="trip-option ${selectedTripId===t._id?'selected':''}" onclick="selectTrip('${t._id}')">
+      <div class="trip-option-title">🚛 ${t.driver} — ${t.trip2?'Trip 2':'Trip 1'}</div>
+      <div class="trip-option-sub">${t.vt} · ${t.vid||'—'} · ${(t.storeNames||[]).length} stores</div>
+    </div>`).join('');
+
+  document.getElementById('main-content').innerHTML = `
+    <div class="trip-selector">
+      <label class="driver-label">Select your trip</label>
+      ${options}
+    </div>
+    <button class="action-btn btn-arrived" onclick="confirmTripSelect()" style="margin-top:4px">
+      <span class="btn-icon">✅</span> Continue
+    </button>`;
+}
+
+function selectTrip(id) {
+  selectedTripId = id;
+  document.querySelectorAll('.trip-option').forEach(el => el.classList.remove('selected'));
+  document.querySelector(`[onclick="selectTrip('${id}')"]`)?.classList.add('selected');
+}
+
+function confirmTripSelect() {
+  if (!selectedTripId) return;
+  const trip = matchedTrips.find(t => t._id === selectedTripId);
+  loadStoreState(trip);
+  renderCheckIn();
+}
+
+// ── RENDER: Main check-in screen ──────────────────────────────
+function renderCheckIn() {
+  const s = storeState;
+  const arrDone = !!s.arr, depDone = !!s.dep, compDone = s.completed;
+
+  document.getElementById('main-content').innerHTML = `
+    <!-- Driver name -->
+    <div class="driver-section">
+      <label class="driver-label">Your Name</label>
+      <input class="driver-input" id="driver-inp" type="text"
+        placeholder="Enter your name…" value="${driverName}"
+        oninput="driverName=this.value;localStorage.setItem('quik_driver_name',this.value)">
+    </div>
+
+    <!-- Status timeline -->
+    <div class="status-card">
+      <div class="sc-title">Today's Status — ${STORE.replace('QUIK_','')}</div>
+
+      <div class="status-row">
+        <div class="status-icon ${arrDone?'si-done':''}" style="${!arrDone?'background:#1E293B':''}">
+          ${arrDone?'✅':'🔵'}
+        </div>
+        <div class="status-info">
+          <div class="status-label">Arrived at Store</div>
+          <div class="status-time">${arrDone?'✓ '+s.arr:'Pending'}</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div class="status-icon ${depDone?'si-done':''}" style="${!depDone?'background:#1E293B':''}">
+          ${depDone?'✅':'🟠'}
+        </div>
+        <div class="status-info">
+          <div class="status-label">Departed Store</div>
+          <div class="status-time">${depDone?'✓ '+s.dep:'Pending'}</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div class="status-icon ${compDone?'si-done':''}" style="${!compDone?'background:#1E293B':''}">
+          ${compDone?'✅':'🟢'}
+        </div>
+        <div class="status-info">
+          <div class="status-label">Delivery Completed</div>
+          <div class="status-time">${compDone?'✓ Marked complete':'Pending'}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-section">
+      <button class="action-btn btn-arrived" id="btn-arr"
+        onclick="markArrived()" ${arrDone?'disabled':''}>
+        <span class="btn-icon">📍</span>
+        ${arrDone?'Arrived — '+s.arr:'Mark Arrived'}
+      </button>
+
+      <button class="action-btn btn-departed" id="btn-dep"
+        onclick="markDeparted()" ${(!arrDone||depDone)?'disabled':''}>
+        <span class="btn-icon">🚛</span>
+        ${depDone?'Departed — '+s.dep:'Mark Departed'}
+      </button>
+
+      <button class="action-btn btn-completed" id="btn-comp"
+        onclick="markCompleted()" ${(!depDone||compDone)?'disabled':''}>
+        <span class="btn-icon">✅</span>
+        ${compDone?'Delivery Completed!':'Mark Delivery Complete'}
+      </button>
+    </div>
+
+    <div class="info-footer">
+      Trip updates to <strong>QUIK Dashboard</strong> in real-time<br>
+      <span style="font-size:10px">Trip ID: ${selectedTripId}</span>
+    </div>`;
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────
+function getDriverName() {
+  const inp = document.getElementById('driver-inp');
+  if (inp) driverName = inp.value.trim();
+  return driverName || 'Driver';
+}
+
+async function markArrived() {
+  const time = nowTime();
+  const driver = getDriverName();
+  storeState.arr = time;
+
+  await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/arr`).set(time);
+  await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/driver`).set(driver);
+  await db.ref('checkins').push({
+    tripId: selectedTripId, store: STORE, driver, action: 'arrived',
+    time, date: nowDate(), ts: Date.now()
+  });
+
+  showSuccess('📍', 'Arrived!', `${STORE.replace('QUIK_','')} — ${time}\nDashboard updated ✅`);
+  renderCheckIn();
+}
+
+async function markDeparted() {
+  const time = nowTime();
+  const driver = getDriverName();
+  storeState.dep = time;
+
+  await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/dep`).set(time);
+  await db.ref('checkins').push({
+    tripId: selectedTripId, store: STORE, driver, action: 'departed',
+    time, date: nowDate(), ts: Date.now()
+  });
+
+  showSuccess('🚛', 'Departed!', `Left ${STORE.replace('QUIK_','')} at ${time}\nDashboard updated ✅`);
+  renderCheckIn();
+}
+
+async function markCompleted() {
+  const time = nowTime();
+  const driver = getDriverName();
+  storeState.completed = true;
+
+  await db.ref(`trips/${selectedTripId}/status`).set('Completed');
+  await db.ref(`trips/${selectedTripId}/completedAt`).set(time);
+  await db.ref('checkins').push({
+    tripId: selectedTripId, store: STORE, driver, action: 'completed',
+    time, date: nowDate(), ts: Date.now()
+  });
+
+  showSuccess('🎉', 'Delivery Complete!', `${STORE.replace('QUIK_','')} marked complete\nDashboard auto-updated ✅`);
+  renderCheckIn();
+}
+
+// ── SUCCESS POPUP ─────────────────────────────────────────────
+function showSuccess(emoji, title, sub) {
+  document.getElementById('success-emoji').textContent = emoji;
+  document.getElementById('success-title').textContent = title;
+  document.getElementById('success-sub').textContent = sub;
+  document.getElementById('success-ov').classList.add('show');
+  // Auto close after 3s
+  setTimeout(closeSuccess, 3000);
+}
+function closeSuccess() {
+  document.getElementById('success-ov').classList.remove('show');
+}
+
+function forceDate() {
+  const d = prompt('Enter date (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+  if (d) window.location.href = `?store=${STORE}&date=${d}`;
+}
+
+// ── START ─────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
