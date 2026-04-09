@@ -243,7 +243,7 @@ function confirmTripSelect() {
 // ── RENDER: Main check-in screen ──────────────────────────────
 function renderCheckIn() {
   const s = storeState;
-  const arrDone = !!s.arr, depDone = !!s.dep, compDone = s.completed;
+  const arrDone = !!s.arr, compDone = s.completed, depDone = !!s.dep;
 
   document.getElementById('main-content').innerHTML = `
     <!-- Driver name -->
@@ -263,18 +263,8 @@ function renderCheckIn() {
           ${arrDone?'✅':'🔵'}
         </div>
         <div class="status-info">
-          <div class="status-label">Arrived at Store</div>
+          <div class="status-label">1. Arrived at Store</div>
           <div class="status-time">${arrDone?'✓ '+s.arr:'Pending'}</div>
-        </div>
-      </div>
-
-      <div class="status-row">
-        <div class="status-icon ${depDone?'si-done':''}" style="${!depDone?'background:#1E293B':''}">
-          ${depDone?'✅':'🟠'}
-        </div>
-        <div class="status-info">
-          <div class="status-label">Departed Store</div>
-          <div class="status-time">${depDone?'✓ '+s.dep:'Pending'}</div>
         </div>
       </div>
 
@@ -283,30 +273,40 @@ function renderCheckIn() {
           ${compDone?'✅':'🟢'}
         </div>
         <div class="status-info">
-          <div class="status-label">Delivery Completed</div>
+          <div class="status-label">2. Delivery Completed</div>
           <div class="status-time">${compDone?'✓ Marked complete':'Pending'}</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div class="status-icon ${depDone?'si-done':''}" style="${!depDone?'background:#1E293B':''}">
+          ${depDone?'✅':'🟠'}
+        </div>
+        <div class="status-info">
+          <div class="status-label">3. Departed Store</div>
+          <div class="status-time">${depDone?'✓ '+s.dep:'Pending'}</div>
         </div>
       </div>
     </div>
 
-    <!-- Action buttons -->
+    <!-- Action buttons — new order: Arrived → Completed → Departed -->
     <div class="action-section">
       <button class="action-btn btn-arrived" id="btn-arr"
         onclick="markArrived()" ${arrDone?'disabled':''}>
         <span class="btn-icon">📍</span>
-        ${arrDone?'Arrived — '+s.arr:'Mark Arrived'}
-      </button>
-
-      <button class="action-btn btn-departed" id="btn-dep"
-        onclick="markDeparted()" ${(!arrDone||depDone)?'disabled':''}>
-        <span class="btn-icon">🚛</span>
-        ${depDone?'Departed — '+s.dep:'Mark Departed'}
+        ${arrDone?'Arrived ✓ — '+s.arr:'1. Mark Arrived'}
       </button>
 
       <button class="action-btn btn-completed" id="btn-comp"
-        onclick="markCompleted()" ${(!depDone||compDone)?'disabled':''}>
+        onclick="markCompleted()" ${(!arrDone||compDone)?'disabled':''}>
         <span class="btn-icon">✅</span>
-        ${compDone?'Delivery Completed!':'Mark Delivery Complete'}
+        ${compDone?'Delivery Completed ✓':'2. Mark Delivery Complete'}
+      </button>
+
+      <button class="action-btn btn-departed" id="btn-dep"
+        onclick="markDeparted()" ${(!compDone||depDone)?'disabled':''}>
+        <span class="btn-icon">🚛</span>
+        ${depDone?'Departed ✓ — '+s.dep:'3. Mark Departed'}
       </button>
     </div>
 
