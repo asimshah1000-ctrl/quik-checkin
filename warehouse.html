@@ -197,6 +197,9 @@ function renderEntrance() {
       <button class="action-btn btn-arrive" onclick="markWH('arrived')" ${wh.arrived?'disabled':''}>
         🏭 ${wh.arrived ? 'Arrived ✓ '+wh.arrived : 'Mark Arrived at Warehouse'}
       </button>
+      <button class="action-btn btn-load" onclick="markWH('loaded')" ${(!wh.arrived||wh.loaded)?'disabled':''}>
+        📦 ${wh.loaded ? 'Loaded ✓ '+wh.loaded : 'Mark Loading Done'}
+      </button>
       <button class="action-btn btn-depart" onclick="markWH('departed')" ${(!wh.arrived||wh.departed)?'disabled':''}>
         🚛 ${wh.departed ? 'Departed ✓ '+wh.departed : 'Mark Departed from Warehouse'}
       </button>
