@@ -133,7 +133,124 @@ firebase.initializeApp(firebaseConfig);
 const db      = firebase.database();
 const storage = firebase.storage();
 
-// ── URL Params ────────────────────────────────────────────────
+// ── Store coordinates for GPS verification ────────────────────
+const STORE_COORDS = {
+  QUIK_RAFFA:      { lat:25.25069, lng:55.28217, radius:10 },
+  QUIK_UMS:        { lat:25.15550, lng:55.20408, radius:10 },
+  QUIK_DWTC:       { lat:25.22064, lng:55.28955, radius:10 },
+  QUIK_DFC:        { lat:25.22338, lng:55.35224, radius:200 },  // basement parking
+  QUIK_MEYDAN:     { lat:25.15546, lng:55.29275, radius:10 },
+  QUIK_DEIRA:      { lat:25.27191, lng:55.32302, radius:10 },
+  QUIK_ALQUSAIS:   { lat:25.29200, lng:55.40303, radius:10 },
+  QUIK_BB2:        { lat:25.18449, lng:55.27554, radius:10 },
+  QUIK_BB:         { lat:25.18583, lng:55.27566, radius:10 },
+  QUIK_SAFA:       { lat:25.17871, lng:55.24292, radius:10 },
+  QUIK_DSO:        { lat:25.12310, lng:55.37609, radius:10 },
+  QUIK_MIRDIFF:    { lat:25.23478, lng:55.43643, radius:200 }, // mall basement
+  QUIK_BB3:        { lat:25.08722, lng:55.31449, radius:10 },
+  QUIK_MAJAN:      { lat:25.08726, lng:55.31452, radius:10 },
+  QUIK_DUBAILAND:  { lat:25.09000, lng:55.38379, radius:10 },
+  QUIK_MARINA:     { lat:25.08234, lng:55.14754, radius:10 },
+  QUIK_BARSHA:     { lat:25.10875, lng:55.19832, radius:10 },
+  QUIK_MARINA2:    { lat:25.07890, lng:55.13751, radius:10 },
+  QUIK_INTERNETC:  { lat:25.10348, lng:55.16602, radius:10 },
+  QUIK_JVC_PLAZA:  { lat:25.05245, lng:55.20727, radius:10 },
+  QUIK_JVC:        { lat:25.05193, lng:55.21897, radius:10 },
+  QUIK_ARJAN:      { lat:25.05885, lng:55.23368, radius:10 },
+  QUIK_ALQUOZ:     { lat:25.11030, lng:55.22855, radius:10 },
+  QUIK_JADDAF:     { lat:25.22350, lng:55.33395, radius:10 },
+  QUIK_MOTORC:     { lat:25.04544, lng:55.22822, radius:10 },
+  QUIK_JLT:        { lat:25.07403, lng:55.14401, radius:10 },
+  QUIK_DFP:        { lat:25.02905, lng:55.10685, radius:200 }, // parking basement
+  QUIK_JVT:        { lat:25.03969, lng:55.18078, radius:10 },
+  QUIK_DIP1:       { lat:24.99810, lng:55.16769, radius:10 },
+  QUIK_SPORTSCITY: { lat:25.03968, lng:55.22061, radius:10 },
+  QUIK_CITYLAND:   { lat:25.06521, lng:55.30122, radius:200 }, // mall
+  QUIK_WASL:       { lat:25.21742, lng:55.26086, radius:10 },
+  QUIK_MURJAN:     { lat:24.43161, lng:54.43767, radius:10 },
+  QUIK_RAHA:       { lat:24.44412, lng:54.59035, radius:10 },
+  QUIK_ETISALAT:   { lat:24.47989, lng:54.36014, radius:10 },
+  QUIK_REEM:       { lat:24.48484, lng:54.40841, radius:10 },
+  QUIK_BANIYAS:    { lat:24.30025, lng:54.61614, radius:10 },
+  QUIK_MBZ:        { lat:24.30833, lng:54.53700, radius:10 },
+  QUIK_WAHA:       { lat:24.26334, lng:55.76574, radius:10 },
+  QUIK_SHAMKHA:    { lat:24.40367, lng:54.69789, radius:10 },
+};
+
+// ── Haversine distance (meters) ───────────────────────────────
+function distMeters(lat1,lng1,lat2,lng2){
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ── GPS Check — returns promise ───────────────────────────────
+function checkGPS(store) {
+  return new Promise((resolve, reject) => {
+    const coords = STORE_COORDS[store];
+    if (!coords) { resolve({ ok:true, dist:0, note:'no-coords' }); return; }
+
+    if (!navigator.geolocation) {
+      reject(new Error('GPS is not supported on this device'));
+      return;
+    }
+
+    // Show waiting UI
+    showGPSWaiting();
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        hideGPSWaiting();
+        const dist = distMeters(pos.coords.latitude, pos.coords.longitude, coords.lat, coords.lng);
+        const allowed = dist <= coords.radius;
+        resolve({ ok: allowed, dist: Math.round(dist), radius: coords.radius });
+      },
+      err => {
+        hideGPSWaiting();
+        let msg = 'GPS error';
+        if (err.code === 1) msg = 'GPS permission denied — please allow location access';
+        else if (err.code === 2) msg = 'GPS signal nahi mila — bahar jao ya WiFi on karo';
+        else if (err.code === 3) msg = 'GPS timeout — dobara try karo';
+        reject(new Error(msg));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
+function showGPSWaiting() {
+  let el = document.getElementById('gps-wait');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'gps-wait';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+    el.innerHTML = '<div style="font-size:40px">📍</div><div style="color:#fff;font-size:15px;font-weight:600">GPS location check ho rahi hai…</div><div style="color:#64748B;font-size:12px">Allow location access if prompted</div>';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'flex';
+}
+function hideGPSWaiting() {
+  const el = document.getElementById('gps-wait');
+  if (el) el.style.display = 'none';
+}
+
+// ── GPS-guarded action wrapper ────────────────────────────────
+async function withGPS(actionFn) {
+  try {
+    const result = await checkGPS(STORE);
+    if (!result.ok) {
+      showSuccess('🚫', 'Aap store pe nahi hain!',
+        `Aap ${result.dist}m door hain.\nAllowed radius: ${result.radius}m\n\nPehle store pe pahunchein, phir scan karein.`);
+      // Override success close to not do anything
+      document.getElementById('success-ov').querySelector('button').onclick = closeSuccess;
+      return;
+    }
+    await actionFn();
+  } catch(err) {
+    showSuccess('⚠️', 'GPS Error', err.message + '\n\nLocation access allow karo settings mein.');
+    document.getElementById('success-ov').querySelector('button').onclick = closeSuccess;
+  }
+}
 const params  = new URLSearchParams(window.location.search);
 const STORE   = params.get('store') || '';
 const DATE    = params.get('date')  || new Date().toISOString().split('T')[0];
@@ -345,33 +462,107 @@ function getDriverName() {
   return driverName || 'Driver';
 }
 
+// ── GPS VERIFICATION ─────────────────────────────────────────
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // meters
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getGPS() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('GPS not supported')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy }),
+      err => reject(err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
+function showGPSOverlay(msg, color='#EF4444') {
+  let ov = document.getElementById('gps-ov');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'gps-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div style="background:#111827;border:2px solid ${color};border-radius:16px;padding:28px 22px;text-align:center;max-width:320px;width:100%">
+    <div style="font-size:42px;margin-bottom:12px">${color==='#22C55E'?'📍':'🚫'}</div>
+    <div style="font-size:14px;font-weight:700;color:#F1F5F9;margin-bottom:8px;line-height:1.5">${msg}</div>
+    <button onclick="document.getElementById('gps-ov').remove()" style="margin-top:12px;padding:10px 24px;background:${color};border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">OK</button>
+  </div>`;
+  ov.style.display = 'flex';
+}
+
+async function verifyLocation(actionLabel) {
+  // Show loading
+  showGPSOverlay(`📡 GPS location check ho rahi hai…<br><span style="font-size:11px;color:#94A3B8">Please wait — ${actionLabel}</span>`, '#3B82F6');
+
+  const coords = STORE_COORDS[STORE];
+  if (!coords) {
+    document.getElementById('gps-ov')?.remove();
+    return true; // No coords — allow
+  }
+
+  try {
+    const pos = await getGPS();
+    const distM = haversineM(pos.lat, pos.lng, coords.lat, coords.lng);
+    const radius = coords.radius || 10;
+    document.getElementById('gps-ov')?.remove();
+
+    if (distM <= radius) {
+      return true; // ✅ Within range
+    } else {
+      showGPSOverlay(
+        `❌ Store se door hain<br><span style="font-size:12px;color:#94A3B8">Aap ${Math.round(distM)}m door hain<br>Store radius: ${radius}m<br><br>Store pe pahunch kar scan karo</span>`,
+        '#EF4444'
+      );
+      return false;
+    }
+  } catch(err) {
+    document.getElementById('gps-ov')?.remove();
+    if (err.code === 1) { // Permission denied
+      showGPSOverlay('❌ Location permission deny ki hui hai<br><span style="font-size:12px;color:#94A3B8">Phone settings mein location ON karo<br>phir page refresh karo</span>', '#EF4444');
+      return false;
+    }
+    // GPS timeout or other error — block with message
+    showGPSOverlay('❌ GPS signal nahi mila<br><span style="font-size:12px;color:#94A3B8">Open area mein jao aur dobara try karo</span>', '#F97316');
+    return false;
+  }
+}
+
 async function markArrived() {
+  const ok = await verifyLocation('Arrived');
+  if (!ok) return;
   const time = nowTime();
   const driver = getDriverName();
   storeState.arr = time;
-
   await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/arr`).set(time);
   await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/driver`).set(driver);
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'arrived',
     time, date: nowDate(), ts: Date.now()
   });
-
   showSuccess('📍', 'Arrived!', `${STORE.replace('QUIK_','')} — ${time}\nDashboard updated ✅`);
   renderCheckIn();
 }
 
 async function markDeparted() {
+  const ok = await verifyLocation('Departed');
+  if (!ok) return;
   const time = nowTime();
   const driver = getDriverName();
   storeState.dep = time;
-
   await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/dep`).set(time);
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'departed',
     time, date: nowDate(), ts: Date.now()
   });
-
   showSuccess('🚛', 'Departed!', `Left ${STORE.replace('QUIK_','')} at ${time}\nDashboard updated ✅`);
   renderCheckIn();
 }
@@ -420,6 +611,8 @@ async function uploadPhoto(file) {
 }
 
 async function markCompleted() {
+  const ok = await verifyLocation('Delivery Completed');
+  if (!ok) return;
   const time   = nowTime();
   const driver = getDriverName();
 
