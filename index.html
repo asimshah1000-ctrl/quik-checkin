@@ -8,6 +8,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -56,6 +57,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .driver-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:block}
 .driver-input{width:100%;background:#1E293B;border:1px solid var(--border);border-radius:9px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s}
 .driver-input:focus{border-color:var(--blue)}
+.photo-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
+.photo-upload-btn{width:100%;padding:14px;background:#1E293B;border:2px dashed var(--border);border-radius:10px;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;text-align:center;display:block;transition:all .2s}
+.photo-upload-btn:hover{border-color:var(--blue)}
+.photo-preview{width:100%;max-height:200px;object-fit:cover;border-radius:8px;display:none;margin-top:10px}
+.upload-prog{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px;display:none}
+.upload-prog-bar{height:100%;background:var(--green);border-radius:2px;width:0%;transition:width .3s}
 
 /* Success overlay */
 .success-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s}
@@ -123,7 +130,8 @@ const firebaseConfig = {
   appId: "1:860154002421:web:315c836dbded51a73d3ebc"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const db      = firebase.database();
+const storage = firebase.storage();
 
 // ── URL Params ────────────────────────────────────────────────
 const params  = new URLSearchParams(window.location.search);
@@ -134,7 +142,7 @@ const DATE    = params.get('date')  || new Date().toISOString().split('T')[0];
 let matchedTrips = [];
 let selectedTripId = null;
 let driverName = localStorage.getItem('quik_driver_name') || '';
-let storeState = { arr: null, dep: null, completed: false };
+let storeState = { arr: null, dep: null, completed: false, photoURL: null };
 
 // ── Format time now ───────────────────────────────────────────
 function nowTime() {
@@ -190,6 +198,7 @@ function loadStoreState(trip) {
     arr:       st.arr       || null,
     dep:       st.dep       || null,
     completed: trip.status === 'Completed',
+    photoURL:  st.photoURL  || null,
   };
 }
 
@@ -289,7 +298,20 @@ function renderCheckIn() {
       </div>
     </div>
 
-    <!-- Action buttons — new order: Arrived → Completed → Departed -->
+    <!-- Photo upload section — shown after arrived -->
+    ${arrDone && !compDone ? `
+    <div class="photo-section">
+      <label class="driver-label">📷 Delivery Proof (Optional)</label>
+      <label class="photo-upload-btn" for="photo-inp">
+        ${storeState.photoURL ? '✅ Photo uploaded — tap to change' : '📸 Take photo / upload proof'}
+      </label>
+      <input type="file" id="photo-inp" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoSelect(this)">
+      <img id="photo-preview" class="photo-preview" src="${storeState.photoURL||''}" ${storeState.photoURL?'style="display:block"':''}>
+      <div class="upload-prog" id="upload-prog"><div class="upload-prog-bar" id="upload-bar"></div></div>
+      <div id="photo-status" style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center">${storeState.photoURL?'Photo ready ✅':''}</div>
+    </div>` : ''}
+
+    <!-- Action buttons — order: Arrived → Completed → Departed -->
     <div class="action-section">
       <button class="action-btn btn-arrived" id="btn-arr"
         onclick="markArrived()" ${arrDone?'disabled':''}>
@@ -354,18 +376,80 @@ async function markDeparted() {
   renderCheckIn();
 }
 
-async function markCompleted() {
-  const time = nowTime();
-  const driver = getDriverName();
-  storeState.completed = true;
+// ── PHOTO UPLOAD ──────────────────────────────────────────────
+let pendingPhotoFile = null;
 
-  await db.ref(`trips/${selectedTripId}/status`).set('Completed');
-  await db.ref(`trips/${selectedTripId}/completedAt`).set(time);
+function handlePhotoSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+  pendingPhotoFile = file;
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('photo-preview');
+    if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+    const status = document.getElementById('photo-status');
+    if (status) status.textContent = 'Photo ready — mark complete karo ✅';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function uploadPhoto(file) {
+  const path = `delivery_proofs/${DATE}/${STORE}/${selectedTripId}_${Date.now()}.jpg`;
+  const ref = storage.ref(path);
+  const prog = document.getElementById('upload-prog');
+  const bar  = document.getElementById('upload-bar');
+  const status = document.getElementById('photo-status');
+  if (prog) prog.style.display = 'block';
+  if (status) status.textContent = 'Uploading…';
+
+  return new Promise((resolve, reject) => {
+    const task = ref.put(file);
+    task.on('state_changed',
+      snap => {
+        const pct = (snap.bytesTransferred / snap.totalBytes * 100).toFixed(0);
+        if (bar) bar.style.width = pct + '%';
+      },
+      reject,
+      async () => {
+        const url = await ref.getDownloadURL();
+        resolve(url);
+      }
+    );
+  });
+}
+
+async function markCompleted() {
+  const time   = nowTime();
+  const driver = getDriverName();
+
+  // Upload photo if selected
+  let photoURL = null;
+  if (pendingPhotoFile) {
+    try {
+      const status = document.getElementById('photo-status');
+      if (status) status.textContent = 'Uploading photo…';
+      photoURL = await uploadPhoto(pendingPhotoFile);
+    } catch(e) {
+      console.warn('Photo upload failed:', e);
+    }
+  }
+
+  storeState.completed = true;
+  storeState.photoURL  = photoURL;
+
+  const updates = {};
+  updates[`trips/${selectedTripId}/status`] = 'Completed';
+  updates[`trips/${selectedTripId}/completedAt`] = time;
+  if (photoURL) updates[`trips/${selectedTripId}/storeTimes/${STORE}/photoURL`] = photoURL;
+  await db.ref().update(updates);
+
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'completed',
-    time, date: nowDate(), ts: Date.now()
+    time, date: nowDate(), ts: Date.now(), photoURL: photoURL||null,
   });
 
+  pendingPhotoFile = null;
   showSuccess('🎉', 'Delivery Complete!', `${STORE.replace('QUIK_','')} marked complete\nDashboard auto-updated ✅`);
   renderCheckIn();
 }
