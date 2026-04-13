@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>QUIK — Warehouse Check-in</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0B1120;--card:#111827;--border:#1E2D45;--bg3:#1E293B;
+  --blue:#3B82F6;--green:#22C55E;--orange:#F97316;--red:#EF4444;--purple:#A855F7;
+  --text:#F1F5F9;--muted:#64748B;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.page{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+.hdr{text-align:center;padding:20px 0 16px}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:20px}
+.logo span{color:var(--orange)}
+.wh-badge{display:inline-block;padding:8px 20px;border-radius:10px;margin-top:10px;font-size:12px;font-weight:600}
+.wh-badge.entrance{background:linear-gradient(135deg,#1D4ED8,#3B82F6);color:#fff}
+.wh-badge.trip{background:linear-gradient(135deg,#15803D,#22C55E);color:#fff}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px}
+.card-title{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.driver-list{display:flex;flex-direction:column;gap:8px}
+.driver-opt{padding:12px 14px;background:var(--bg3);border-radius:10px;cursor:pointer;border:2px solid transparent;transition:all .2s;display:flex;align-items:center;gap:10px}
+.driver-opt:hover,.driver-opt.selected{border-color:var(--blue);background:#1D4ED815}
+.driver-opt .dname{font-size:14px;font-weight:600;flex:1}
+.driver-opt .dvid{font-size:10px;color:var(--muted);font-family:monospace}
+.driver-opt .dstatus{font-size:10px;font-weight:600}
+.status-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.status-row:last-child{border-bottom:none}
+.s-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.s-done{background:#16A34A20}.s-pending{background:var(--bg3)}
+.s-info{flex:1}
+.s-label{font-size:13px;font-weight:600}
+.s-time{font-size:11px;color:var(--muted);margin-top:2px}
+.action-btn{width:100%;padding:16px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.action-btn:active{transform:scale(.97)}
+.action-btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-arrive{background:linear-gradient(135deg,var(--blue),#1D4ED8);color:#fff;box-shadow:0 4px 16px #3B82F630}
+.btn-load{background:linear-gradient(135deg,var(--purple),#7C3AED);color:#fff;box-shadow:0 4px 16px #A855F730}
+.btn-depart{background:linear-gradient(135deg,var(--orange),#EA580C);color:#fff;box-shadow:0 4px 16px #F9731630}
+.success-ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:opacity .3s}
+.success-ov.show{opacity:1;pointer-events:all}
+.success-box{background:var(--card);border:1px solid #22C55E60;border-radius:18px;padding:28px 22px;text-align:center;width:88%;max-width:320px;animation:pop .3s ease}
+@keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.s-emoji{font-size:52px;display:block;margin-bottom:12px}
+.s-title{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;margin-bottom:6px}
+.s-sub{font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:18px}
+.s-close{padding:11px 26px;background:var(--green);border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+.loading{text-align:center;padding:40px;color:var(--muted)}
+.spinner{display:inline-block;width:26px;height:26px;border:3px solid #1E2D45;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.trip-info{background:var(--bg3);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.ti-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0}
+.ti-label{color:var(--muted)}.ti-val{font-family:monospace;font-weight:600}
+.empty-msg{text-align:center;padding:24px;color:var(--muted);font-size:13px}
+.wh-select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--text);font-size:13px;outline:none;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hdr">
+    <div class="logo">QUIK <span>⬡</span></div>
+    <div id="page-badge"></div>
+  </div>
+  <div id="main-content">
+    <div class="loading"><div class="spinner"></div><br><br>Loading…</div>
+  </div>
+</div>
+
+<div class="success-ov" id="sov">
+  <div class="success-box">
+    <span class="s-emoji" id="s-emoji">✅</span>
+    <div class="s-title" id="s-title">Done!</div>
+    <div class="s-sub" id="s-sub"></div>
+    <button class="s-close" onclick="closeSov()">OK</button>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyA6SxQbgw-CKzJOZsAaAo0JM67ic3tQOpg",
+  authDomain: "quik-transport.firebaseapp.com",
+  databaseURL: "https://quik-transport-default-rtdb.firebaseio.com",
+  projectId: "quik-transport",
+  storageBucket: "quik-transport.firebasestorage.app",
+  messagingSenderId: "860154002421",
+  appId: "1:860154002421:web:21a4684d9d099c793d3ebc"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const params  = new URLSearchParams(window.location.search);
+const MODE    = params.get('mode') || 'entrance'; // 'entrance' | 'trip'
+const TRIP_ID = params.get('trip') || '';
+const WH      = params.get('wh')   || 'Own Warehouse';
+const TODAY   = new Date().toISOString().split('T')[0];
+
+function nowTime() {
+  return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+
+let trips = [];
+let selectedTripId = null;
+
+// ── Init ─────────────────────────────────────────────
+function init() {
+  if (MODE === 'trip' && TRIP_ID) {
+    // Trip-specific loading QR
+    document.getElementById('page-badge').innerHTML =
+      '<div class="wh-badge trip">📦 Loading Check-in</div>';
+    loadTripMode();
+  } else {
+    // Warehouse entrance
+    document.getElementById('page-badge').innerHTML =
+      `<div class="wh-badge entrance">🏭 Warehouse Entrance</div><div style="font-size:11px;color:var(--muted);margin-top:6px">${TODAY}</div>`;
+    loadEntranceMode();
+  }
+}
+
+// ── ENTRANCE MODE ─────────────────────────────────────
+function loadEntranceMode() {
+  db.ref('trips').on('value', snap => {
+    const data = snap.val() || {};
+    trips = Object.entries(data)
+      .map(([id,t]) => ({...t, _id:id}))
+      .filter(t => t.date === TODAY);
+    renderEntrance();
+  });
+}
+
+function renderEntrance() {
+  if (!trips.length) {
+    document.getElementById('main-content').innerHTML = `
+      <div class="empty-msg">
+        <div style="font-size:36px;margin-bottom:10px">📋</div>
+        Aaj ke liye koi trip schedule nahi hai.<br>
+        <span style="font-size:11px">Supervisor se trip add karwao dashboard mein.</span>
+      </div>`;
+    return;
+  }
+
+  const selected = trips.find(t => t._id === selectedTripId);
+
+  let html = `
+    <div class="card">
+      <div class="card-title">Apni trip select karo</div>
+      <div class="driver-list">
+        ${trips.map(t => {
+          const wh = t.whCheckin || {};
+          const statusColor = wh.departed ? '#22C55E' : wh.arrived ? '#F97316' : '#64748B';
+          const statusLabel = wh.departed ? '✅ Departed' : wh.arrived ? '🏭 Arrived' : '⏳ Pending';
+          return `<div class="driver-opt ${t._id===selectedTripId?'selected':''}" onclick="selectTrip('${t._id}')">
+            <div style="font-size:20px">${t.trip2?'🔄':'🚛'}</div>
+            <div style="flex:1">
+              <div class="dname">${t.driver||'—'} <span style="font-size:9px;color:var(--muted);font-weight:400">${t.trip2?'(2nd trip)':''}</span></div>
+              <div class="dvid">${t.vid||'—'} · ${(t.storeNames||[]).length} stores</div>
+            </div>
+            <div class="dstatus" style="color:${statusColor}">${statusLabel}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  if (selected) {
+    const wh = selected.whCheckin || {};
+    html += `
+      <div class="card">
+        <div class="card-title">Warehouse Status — ${selected.driver}</div>
+        <div class="status-row">
+          <div class="s-icon ${wh.arrived?'s-done':'s-pending'}">${wh.arrived?'✅':'🏭'}</div>
+          <div class="s-info">
+            <div class="s-label">Warehouse Arrived</div>
+            <div class="s-time">${wh.arrived ? '✓ '+wh.arrived : 'Pending'}</div>
+          </div>
+        </div>
+        <div class="status-row">
+          <div class="s-icon ${wh.loaded?'s-done':'s-pending'}">${wh.loaded?'✅':'📦'}</div>
+          <div class="s-info">
+            <div class="s-label">Vehicle Loaded</div>
+            <div class="s-time">${wh.loaded ? '✓ '+wh.loaded : 'Pending'}</div>
+          </div>
+        </div>
+        <div class="status-row">
+          <div class="s-icon ${wh.departed?'s-done':'s-pending'}">${wh.departed?'✅':'🚛'}</div>
+          <div class="s-info">
+            <div class="s-label">Warehouse Departed</div>
+            <div class="s-time">${wh.departed ? '✓ '+wh.departed : 'Pending'}</div>
+          </div>
+        </div>
+      </div>
+
+      <button class="action-btn btn-arrive" onclick="markWH('arrived')" ${wh.arrived?'disabled':''}>
+        🏭 ${wh.arrived ? 'Arrived ✓ '+wh.arrived : 'Mark Arrived at Warehouse'}
+      </button>
+      <button class="action-btn btn-depart" onclick="markWH('departed')" ${(!wh.arrived||wh.departed)?'disabled':''}>
+        🚛 ${wh.departed ? 'Departed ✓ '+wh.departed : 'Mark Departed from Warehouse'}
+      </button>
+    `;
+  }
+
+  document.getElementById('main-content').innerHTML = html;
+}
+
+function selectTrip(id) {
+  selectedTripId = id;
+  renderEntrance();
+}
+
+async function markWH(action) {
+  if (!selectedTripId) return;
+  const time = nowTime();
+  await db.ref(`trips/${selectedTripId}/whCheckin/${action}`).set(time);
+  // Auto-update delivery status when departed
+  if (action === 'departed') {
+    await db.ref(`trips/${selectedTripId}/status`).set('In Transit');
+    await db.ref(`trips/${selectedTripId}/dispatch`).set(time);
+  }
+  await db.ref('wh_checkins').push({
+    tripId: selectedTripId,
+    driver: trips.find(t=>t._id===selectedTripId)?.driver || '—',
+    action, time, date: TODAY, ts: Date.now()
+  });
+  const msgs = {
+    arrived:  { emoji:'🏭', title:'Warehouse Arrived!',  sub:`Time recorded: ${time}\nDashboard updated ✅` },
+    departed: { emoji:'🚛', title:'Departed! Status → In Transit', sub:`Dispatch: ${time}\nStatus auto-updated ✅` },
+  };
+  showSov(msgs[action].emoji, msgs[action].title, msgs[action].sub);
+}
+
+// ── TRIP LOADING MODE ─────────────────────────────────
+function loadTripMode() {
+  db.ref(`trips/${TRIP_ID}`).on('value', snap => {
+    const trip = snap.val();
+    if (!trip) {
+      document.getElementById('main-content').innerHTML =
+        `<div class="empty-msg">❌ Trip nahi mila. Supervisor se check karo.</div>`;
+      return;
+    }
+    renderTripMode({...trip, _id: TRIP_ID});
+  });
+}
+
+function renderTripMode(trip) {
+  const wh = trip.whCheckin || {};
+  document.getElementById('main-content').innerHTML = `
+    <div class="trip-info">
+      <div class="ti-row"><span class="ti-label">Driver</span><span class="ti-val">${trip.driver||'—'}</span></div>
+      <div class="ti-row"><span class="ti-label">Vehicle</span><span class="ti-val">${trip.vid||'—'}</span></div>
+      <div class="ti-row"><span class="ti-label">Stores</span><span class="ti-val">${(trip.storeNames||[]).length} stores</span></div>
+      <div class="ti-row"><span class="ti-label">Pallets</span><span class="ti-val">${trip.pallets||0} / ${trip.capacity||14}</span></div>
+      <div class="ti-row"><span class="ti-label">Date</span><span class="ti-val">${trip.date}</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Loading Status</div>
+      <div class="status-row">
+        <div class="s-icon ${wh.arrived?'s-done':'s-pending'}">${wh.arrived?'✅':'🏭'}</div>
+        <div class="s-info">
+          <div class="s-label">Arrived at Warehouse</div>
+          <div class="s-time">${wh.arrived?'✓ '+wh.arrived:'Pending — entrance pe scan karo'}</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="s-icon ${wh.loaded?'s-done':'s-pending'}">${wh.loaded?'✅':'📦'}</div>
+        <div class="s-info">
+          <div class="s-label">Vehicle Loaded</div>
+          <div class="s-time">${wh.loaded?'✓ '+wh.loaded:'Pending'}</div>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="s-icon ${wh.departed?'s-done':'s-pending'}">${wh.departed?'✅':'🚛'}</div>
+        <div class="s-info">
+          <div class="s-label">Departed Warehouse</div>
+          <div class="s-time">${wh.departed?'✓ '+wh.departed:'Pending — entrance pe scan karo'}</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="action-btn btn-load" onclick="markLoaded('${TRIP_ID}')"
+      ${(!wh.arrived || wh.loaded) ? 'disabled' : ''}>
+      📦 ${wh.loaded ? 'Loaded ✓ '+wh.loaded : 'Mark Vehicle Loaded'}
+    </button>
+    ${!wh.arrived ? `<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">⚠️ Pehle warehouse entrance pe scan karo</div>` : ''}
+  `;
+}
+
+async function markLoaded(tripId) {
+  const time = nowTime();
+  await db.ref(`trips/${tripId}/whCheckin/loaded`).set(time);
+  await db.ref('wh_checkins').push({
+    tripId, action:'loaded', time, date:TODAY, ts:Date.now()
+  });
+  showSov('📦', 'Vehicle Loaded!', `Loading time: ${time}\nDashboard updated ✅`);
+}
+
+// ── SUCCESS POPUP ─────────────────────────────────────
+function showSov(emoji, title, sub) {
+  document.getElementById('s-emoji').textContent = emoji;
+  document.getElementById('s-title').textContent = title;
+  document.getElementById('s-sub').textContent = sub;
+  document.getElementById('sov').classList.add('show');
+  setTimeout(closeSov, 3000);
+}
+function closeSov() {
+  document.getElementById('sov').classList.remove('show');
+}
+
+init();
+</script>
+</body>
+</html>
