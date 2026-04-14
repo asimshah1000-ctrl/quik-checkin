@@ -536,7 +536,54 @@ async function verifyLocation(actionLabel) {
   }
 }
 
+// ── SEQUENTIAL CHECK-IN CHECK ────────────────────────────────
+// Driver cannot arrive at new store if they have a pending check-in elsewhere
+async function checkSequential() {
+  const driver = getDriverName();
+  if (!driver || driver === 'Driver') return { ok: true };
+
+  const today = nowDate();
+  try {
+    const snap = await db.ref('checkins')
+      .orderByChild('date').equalTo(today).once('value');
+    const all = snap.val() ? Object.values(snap.val()) : [];
+
+    // Filter this driver's checkins today, sorted by time
+    const mine = all
+      .filter(c => c.driver === driver)
+      .sort((a, b) => (b.ts||0) - (a.ts||0));
+
+    if (!mine.length) return { ok: true };
+
+    // Find latest checkin at a DIFFERENT store
+    const lastOther = mine.find(c => c.store && c.store !== STORE);
+    if (!lastOther) return { ok: true };
+
+    // If last action at another store is NOT 'departed', block
+    if (lastOther.action !== 'departed') {
+      return {
+        ok: false,
+        blockedAt: lastOther.store.replace('QUIK_', ''),
+        action: lastOther.action,
+      };
+    }
+    return { ok: true };
+  } catch(e) {
+    console.warn('Sequential check failed:', e);
+    return { ok: true }; // fail open
+  }
+}
+
 async function markArrived() {
+  // Sequential check first
+  const seq = await checkSequential();
+  if (!seq.ok) {
+    showSuccess('🚫', 'Pehle wahan se depart karo!',
+      `Aap ne ${seq.blockedAt} pe "${seq.action}" kiya hua hai.\n\nPehle wahan se DEPARTED mark karo, phir yahan Arrived kar sako ge.`);
+    document.getElementById('success-ov').querySelector('button').onclick = closeSuccess;
+    return;
+  }
+
   const ok = await verifyLocation('Arrived');
   if (!ok) return;
   const time = nowTime();
