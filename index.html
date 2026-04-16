@@ -311,11 +311,13 @@ function init() {
 function loadStoreState(trip) {
   if (!trip) return;
   const st = (trip.storeTimes && trip.storeTimes[STORE]) || {};
+  // ✅ FIX: completion is store-specific (st.completed), NOT trip.status
+  // trip.status='Completed' should not bleed to other stores
   storeState = {
-    arr:       st.arr       || null,
-    dep:       st.dep       || null,
-    completed: trip.status === 'Completed',
-    photoURL:  st.photoURL  || null,
+    arr:       st.arr           || null,
+    dep:       st.dep           || null,
+    completed: !!st.completed,          // store-level flag only
+    photoURL:  st.photoURL      || null,
   };
 }
 
@@ -678,10 +680,28 @@ async function markCompleted() {
   storeState.completed = true;
   storeState.photoURL  = photoURL;
 
+  // ✅ FIX: Save completion at STORE level, not trip level
   const updates = {};
-  updates[`trips/${selectedTripId}/status`] = 'Completed';
-  updates[`trips/${selectedTripId}/completedAt`] = time;
+  updates[`trips/${selectedTripId}/storeTimes/${STORE}/completed`] = time;
+  updates[`trips/${selectedTripId}/storeTimes/${STORE}/completedAt`] = time;
   if (photoURL) updates[`trips/${selectedTripId}/storeTimes/${STORE}/photoURL`] = photoURL;
+
+  // Check if ALL stores in this trip are now completed — then mark trip Completed
+  const tripSnap = await db.ref(`trips/${selectedTripId}`).once('value');
+  const trip = tripSnap.val();
+  if (trip) {
+    const allStores = trip.storeNames || [];
+    const storeTimes = trip.storeTimes || {};
+    // Count completed stores (including this one we just completed)
+    const completedCount = allStores.filter(s =>
+      s === STORE ? true : !!storeTimes[s]?.completed
+    ).length;
+    if (completedCount === allStores.length && allStores.length > 0) {
+      updates[`trips/${selectedTripId}/status`] = 'Completed';
+      updates[`trips/${selectedTripId}/completedAt`] = time;
+    }
+  }
+
   await db.ref().update(updates);
 
   await db.ref('checkins').push({
@@ -690,7 +710,11 @@ async function markCompleted() {
   });
 
   pendingPhotoFile = null;
-  showSuccess('🎉', 'Delivery Complete!', `${STORE.replace('QUIK_','')} marked complete\nDashboard auto-updated ✅`);
+  const allDone = trip && (trip.storeNames||[]).every(s =>
+    s === STORE ? true : !!(trip.storeTimes||{})[s]?.completed
+  );
+  showSuccess('🎉', 'Delivery Complete!',
+    `${STORE.replace('QUIK_','')} marked complete\n${allDone ? '✅ All stores done — Trip Completed!' : 'Dashboard updated ✅'}`);
   renderCheckIn();
 }
 
