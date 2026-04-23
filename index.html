@@ -372,7 +372,7 @@ function confirmTripSelect() {
 // ── RENDER: Main check-in screen ──────────────────────────────
 function renderCheckIn() {
   const s = storeState;
-  const arrDone = !!s.arr, compDone = s.completed, depDone = !!s.dep;
+  const arrDone = !!s.arr, depDone = !!s.dep;
 
   document.getElementById('main-content').innerHTML = `
     <!-- Driver name -->
@@ -398,28 +398,18 @@ function renderCheckIn() {
       </div>
 
       <div class="status-row">
-        <div class="status-icon ${compDone?'si-done':''}" style="${!compDone?'background:#1E293B':''}">
-          ${compDone?'✅':'🟢'}
-        </div>
-        <div class="status-info">
-          <div class="status-label">2. Delivery Completed</div>
-          <div class="status-time">${compDone?'✓ Marked complete':'Pending'}</div>
-        </div>
-      </div>
-
-      <div class="status-row">
         <div class="status-icon ${depDone?'si-done':''}" style="${!depDone?'background:#1E293B':''}">
           ${depDone?'✅':'🟠'}
         </div>
         <div class="status-info">
-          <div class="status-label">3. Departed Store</div>
+          <div class="status-label">2. Departed Store</div>
           <div class="status-time">${depDone?'✓ '+s.dep:'Pending'}</div>
         </div>
       </div>
     </div>
 
-    <!-- Photo upload section — shown after arrived -->
-    ${arrDone && !compDone ? `
+    <!-- Photo upload section — shown after arrived, before departed -->
+    ${arrDone && !depDone ? `
     <div class="photo-section">
       <label class="driver-label">📷 Delivery Proof (Optional)</label>
       <label class="photo-upload-btn" for="photo-inp">
@@ -431,7 +421,7 @@ function renderCheckIn() {
       <div id="photo-status" style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center">${storeState.photoURL?'Photo ready ✅':''}</div>
     </div>` : ''}
 
-    <!-- Action buttons — order: Arrived → Completed → Departed -->
+    <!-- Action buttons: Arrived → Departed only -->
     <div class="action-section">
       <button class="action-btn btn-arrived" id="btn-arr"
         onclick="markArrived()" ${arrDone?'disabled':''}>
@@ -439,16 +429,10 @@ function renderCheckIn() {
         ${arrDone?'Arrived ✓ — '+s.arr:'1. Mark Arrived'}
       </button>
 
-      <button class="action-btn btn-completed" id="btn-comp"
-        onclick="markCompleted()" ${(!arrDone||compDone)?'disabled':''}>
-        <span class="btn-icon">✅</span>
-        ${compDone?'Delivery Completed ✓':'2. Mark Delivery Complete'}
-      </button>
-
       <button class="action-btn btn-departed" id="btn-dep"
-        onclick="markDeparted()" ${(!compDone||depDone)?'disabled':''}>
+        onclick="markDeparted()" ${(!arrDone||depDone)?'disabled':''}>
         <span class="btn-icon">🚛</span>
-        ${depDone?'Departed ✓ — '+s.dep:'3. Mark Departed'}
+        ${depDone?'Departed ✓ — '+s.dep:'2. Mark Departed'}
       </button>
     </div>
 
@@ -460,7 +444,6 @@ function renderCheckIn() {
     <!-- Regional Store Status -->
     <div id="regional-status" style="margin-top:16px"></div>`;
 
-  // Load today's checkins and render regional view
   loadRegionalStatus();
 }
 
@@ -692,11 +675,45 @@ async function markDeparted() {
   const time = nowTime();
   const driver = getDriverName();
   storeState.dep = time;
-  await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/dep`).set(time);
+  storeState.completed = true;
+
+  // Upload photo if selected
+  let photoURL = null;
+  if (pendingPhotoFile) {
+    try {
+      const status = document.getElementById('photo-status');
+      if (status) status.textContent = 'Uploading photo…';
+      photoURL = await uploadPhoto(pendingPhotoFile);
+    } catch(e) { console.warn('Photo upload failed:', e); }
+  }
+
+  const updates = {};
+  updates[`trips/${selectedTripId}/storeTimes/${STORE}/dep`]       = time;
+  updates[`trips/${selectedTripId}/storeTimes/${STORE}/completed`]  = time;
+  if (photoURL) updates[`trips/${selectedTripId}/storeTimes/${STORE}/photoURL`] = photoURL;
+
+  // Check if ALL stores now done → mark trip Completed
+  const tripSnap = await db.ref(`trips/${selectedTripId}`).once('value');
+  const trip = tripSnap.val();
+  if (trip) {
+    const allStores = trip.storeNames || [];
+    const storeTimes = trip.storeTimes || {};
+    const completedCount = allStores.filter(s =>
+      s === STORE ? true : !!(storeTimes[s]?.completed || storeTimes[s]?.dep)
+    ).length;
+    if (completedCount === allStores.length && allStores.length > 0) {
+      updates[`trips/${selectedTripId}/status`] = 'Completed';
+      updates[`trips/${selectedTripId}/completedAt`] = time;
+    }
+  }
+
+  await db.ref().update(updates);
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'departed',
-    time, date: nowDate(), ts: Date.now()
+    time, date: nowDate(), ts: Date.now(), photoURL: photoURL||null,
   });
+
+  pendingPhotoFile = null;
   showSuccess('🚛', 'Departed!', `Left ${STORE.replace('QUIK_','')} at ${time}\nDashboard updated ✅`);
   renderCheckIn();
 }
