@@ -455,7 +455,91 @@ function renderCheckIn() {
     <div class="info-footer">
       Trip updates to <strong>QUIK Dashboard</strong> in real-time<br>
       <span style="font-size:10px">Trip ID: ${selectedTripId}</span>
+    </div>
+
+    <!-- Regional Store Status -->
+    <div id="regional-status" style="margin-top:16px"></div>`;
+
+  // Load today's checkins and render regional view
+  loadRegionalStatus();
+}
+
+// ── REGIONAL STORE STATUS ─────────────────────────────────────
+const STORE_REGIONS_CK = {
+  'AUH + Al Ain': ['QUIK_REEM','QUIK_ETISALAT','QUIK_MURJAN','QUIK_RAHA','QUIK_SHAMKHA','QUIK_MBZ','QUIK_BANIYAS','QUIK_WAHA'],
+  'North Dubai':  ['QUIK_ALQUSAIS','QUIK_DEIRA','QUIK_RAFFA','QUIK_JADDAF','QUIK_DFC','QUIK_DWTC'],
+  'Center Dubai': ['QUIK_WASL','QUIK_BB','QUIK_BB2','QUIK_BB3','QUIK_MEYDAN','QUIK_UMS','QUIK_DSO','QUIK_ALQUOZ','QUIK_BARSHA','QUIK_INTERNETC'],
+  'South Dubai':  ['QUIK_DUBAILAND','QUIK_MARINA','QUIK_MARINA2','QUIK_JLT','QUIK_CITYLAND','QUIK_ARJAN','QUIK_JVC_PLAZA','QUIK_JVC','QUIK_MOTORC','QUIK_JVT','QUIK_SPORTSCITY','QUIK_FURJAN','QUIK_DIP1'],
+};
+function fmt12ck(t) {
+  if (!t) return '—';
+  const [h,mn] = t.split(':').map(Number);
+  return `${h%12||12}:${String(mn).padStart(2,'0')} ${h>=12?'PM':'AM'}`;
+}
+function timeDiffCk(t1,t2) {
+  if (!t1||!t2) return null;
+  const [h1,m1]=t1.split(':').map(Number),[h2,m2]=t2.split(':').map(Number);
+  const diff=(h2*60+m2)-(h1*60+m1); return diff<0?diff+1440:diff;
+}
+async function loadRegionalStatus() {
+  const el = document.getElementById('regional-status');
+  if (!el) return;
+  const today = nowDate();
+  try {
+    const snap = await db.ref('checkins').orderByChild('date').equalTo(today).once('value');
+    const all = snap.val() ? Object.values(snap.val()) : [];
+    const smap = {};
+    all.forEach(c => {
+      if (!c.store) return;
+      if (!smap[c.store]) smap[c.store] = { arr:null, dep:null, comp:null };
+      const s = smap[c.store];
+      if (c.action==='arrived'   && (!s.arr ||c.time>s.arr))  s.arr  = c.time;
+      if (c.action==='departed'  && (!s.dep ||c.time>s.dep))  s.dep  = c.time;
+      if (c.action==='completed' && (!s.comp||c.time>s.comp)) s.comp = c.time;
+    });
+    const regionColors = {'AUH + Al Ain':'#8B5CF6','North Dubai':'#3B82F6','Center Dubai':'#22C55E','South Dubai':'#F97316'};
+    el.innerHTML = `<div style="margin-top:8px">
+      <div style="font-size:11px;font-weight:700;color:#94A3B8;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">📍 Today's Store Status</div>
+      ${Object.entries(STORE_REGIONS_CK).map(([region, stores]) => {
+        const color = regionColors[region]||'#64748B';
+        const doneCount = stores.filter(s => smap[s]?.dep||smap[s]?.comp).length;
+        const arrCount  = stores.filter(s => smap[s]?.arr).length;
+        return `<div style="background:#1E293B;border:1px solid #334155;border-radius:10px;margin-bottom:10px;overflow:hidden">
+          <div style="background:#243040;padding:8px 12px;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:11px;font-weight:700;color:${color}">${region}</span>
+            <span style="font-size:10px;color:#64748B">${arrCount} arrived · ${doneCount}/${stores.length} done</span>
+          </div>
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr style="background:#1A2535">
+              <th style="padding:6px 10px;text-align:left;color:#64748B;font-size:9px;text-transform:uppercase">Store</th>
+              <th style="padding:6px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Check-in</th>
+              <th style="padding:6px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Check-out</th>
+              <th style="padding:6px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Duration</th>
+            </tr></thead>
+            <tbody>
+            ${stores.map(store => {
+              const s = smap[store]||{};
+              const mins = timeDiffCk(s.arr, s.dep||s.comp);
+              const isCurrent = store === STORE;
+              const sc = s.dep?'#F97316':s.comp?'#22C55E':s.arr?'#3B82F6':'#334155';
+              return `<tr style="border-top:1px solid #1E2937;${isCurrent?'background:#1CE78312':''}">
+                <td style="padding:7px 10px">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <div style="width:5px;height:5px;border-radius:50%;background:${sc};flex-shrink:0"></div>
+                    <span style="font-weight:${isCurrent?700:500};color:${isCurrent?'#1CE783':'#CBD5E1'}">${store.replace('QUIK_','')}${isCurrent?' ◀':''}</span>
+                  </div>
+                </td>
+                <td style="padding:7px 8px;text-align:center;font-family:monospace;color:${s.arr?'#F1F5F9':'#475569'}">${fmt12ck(s.arr)}</td>
+                <td style="padding:7px 8px;text-align:center;font-family:monospace;color:${s.dep?'#F97316':s.comp?'#22C55E':'#475569'}">${fmt12ck(s.dep||s.comp)}</td>
+                <td style="padding:7px 8px;text-align:center;font-family:monospace;font-weight:600;color:${mins!==null?(mins<=30?'#22C55E':mins<=60?'#F97316':'#EF4444'):'#475569'}">${mins!==null?mins+'m':'—'}</td>
+              </tr>`;
+            }).join('')}
+            </tbody>
+          </table></div>
+        </div>`;
+      }).join('')}
     </div>`;
+  } catch(e) { el.innerHTML=''; }
 }
 
 // ── ACTIONS ───────────────────────────────────────────────────
