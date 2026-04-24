@@ -214,11 +214,66 @@ function selectTrip(id) {
   renderEntrance();
 }
 
+const WH_COORDS = { lat: 24.97768, lng: 55.19938, radius: 100 }; // DIP2, 100m
+
+function haversineM(lat1,lng1,lat2,lng2){
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function verifyWHLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve({ ok:true }); return; }
+    const btn = document.activeElement;
+    if (btn) btn.disabled = true;
+    document.getElementById('gps-status')?.remove();
+    const status = document.createElement('div');
+    status.id = 'gps-status';
+    status.style.cssText = 'text-align:center;padding:10px;font-size:12px;color:#64748B;margin-bottom:8px';
+    status.textContent = '📡 Verifying location…';
+    document.getElementById('main-content').prepend(status);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        status.remove();
+        if (btn) btn.disabled = false;
+        const dist = haversineM(pos.coords.latitude, pos.coords.longitude, WH_COORDS.lat, WH_COORDS.lng);
+        if (dist <= WH_COORDS.radius) {
+          resolve({ ok: true, dist: Math.round(dist) });
+        } else {
+          showSov('❌', 'Location Error',
+            `You are ${Math.round(dist)}m away from the warehouse.\nAllowed radius: ${WH_COORDS.radius}m\n\nPlease be at the warehouse to check in.`);
+          setTimeout(closeSov, 4000);
+          resolve({ ok: false, dist: Math.round(dist) });
+        }
+      },
+      (err) => {
+        status.remove();
+        if (btn) btn.disabled = false;
+        if (err.code === 1) {
+          showSov('📵', 'Location Required',
+            'Please enable location services to check in at the warehouse.');
+          setTimeout(closeSov, 3500);
+          resolve({ ok: false });
+        } else {
+          resolve({ ok: true }); // fail open on timeout/unavailable
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  });
+}
+
 async function markWH(action) {
   if (!selectedTripId) return;
+
+  // GPS verification
+  const gps = await verifyWHLocation();
+  if (!gps.ok) return;
+
   const time = nowTime();
   await db.ref(`trips/${selectedTripId}/whCheckin/${action}`).set(time);
-  // Auto-update delivery status when departed
   if (action === 'departed') {
     await db.ref(`trips/${selectedTripId}/status`).set('In Transit');
     await db.ref(`trips/${selectedTripId}/dispatch`).set(time);
@@ -230,9 +285,10 @@ async function markWH(action) {
   });
   const msgs = {
     arrived:  { emoji:'🏭', title:'Warehouse Arrived!',  sub:`Time recorded: ${time}\nDashboard updated ✅` },
-    departed: { emoji:'🚛', title:'Departed! Status → In Transit', sub:`Dispatch: ${time}\nStatus auto-updated ✅` },
+    loaded:   { emoji:'📦', title:'Vehicle Loaded!',      sub:`Loading time: ${time}\nDashboard updated ✅` },
+    departed: { emoji:'🚛', title:'Departed! → In Transit', sub:`Dispatch: ${time}\nStatus auto-updated ✅` },
   };
-  showSov(msgs[action].emoji, msgs[action].title, msgs[action].sub);
+  showSov(msgs[action]?.emoji||'✅', msgs[action]?.title||'Done!', msgs[action]?.sub||'');
 }
 
 // ── TRIP LOADING MODE ─────────────────────────────────
@@ -293,6 +349,8 @@ function renderTripMode(trip) {
 }
 
 async function markLoaded(tripId) {
+  const gps = await verifyWHLocation();
+  if (!gps.ok) return;
   const time = nowTime();
   await db.ref(`trips/${tripId}/whCheckin/loaded`).set(time);
   await db.ref('wh_checkins').push({
