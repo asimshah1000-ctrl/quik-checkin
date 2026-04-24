@@ -351,7 +351,20 @@ function renderTripSelector() {
       <label class="driver-label">Select your trip</label>
       ${options}
     </div>
-    <button class="action-btn btn-arrived" onclick="confirmTripSelect()" style="margin-top:4px">
+    <div id="pin-section" style="display:none;margin-top:12px">
+      <label class="driver-label" style="margin-bottom:8px">Enter your PIN to verify</label>
+      <input id="driver-pin-inp" type="password" inputmode="numeric" maxlength="6" placeholder="••••"
+        style="width:100%;padding:14px;font-size:22px;text-align:center;letter-spacing:8px;border:2px solid #E5E7EB;border-radius:12px;outline:none;font-family:'JetBrains Mono',monospace;background:#F9FAFB"
+        onkeydown="if(event.key==='Enter')verifyDriverPin()"
+        oninput="document.getElementById('pin-err').style.display='none'">
+      <div id="pin-err" style="display:none;margin-top:8px;padding:10px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;font-size:12px;color:#EF4444;text-align:center">
+        ❌ Wrong PIN — sirf assigned driver check-in kar sakta hai
+      </div>
+      <button class="action-btn btn-arrived" onclick="verifyDriverPin()" style="margin-top:10px">
+        <span class="btn-icon">🔐</span> Verify & Continue
+      </button>
+    </div>
+    <button id="continue-btn" class="action-btn btn-arrived" onclick="showPinSection()" style="margin-top:4px;display:none">
       <span class="btn-icon">✅</span> Continue
     </button>`;
 }
@@ -360,6 +373,61 @@ function selectTrip(id) {
   selectedTripId = id;
   document.querySelectorAll('.trip-option').forEach(el => el.classList.remove('selected'));
   document.querySelector(`[onclick="selectTrip('${id}')"]`)?.classList.add('selected');
+  // Show continue button
+  const btn = document.getElementById('continue-btn');
+  const pin = document.getElementById('pin-section');
+  if (btn) btn.style.display = 'block';
+  if (pin) pin.style.display = 'none';
+}
+
+function showPinSection() {
+  const pinSec = document.getElementById('pin-section');
+  const btn    = document.getElementById('continue-btn');
+  if (pinSec) pinSec.style.display = 'block';
+  if (btn)    btn.style.display    = 'none';
+  setTimeout(()=>{ const inp=document.getElementById('driver-pin-inp'); if(inp)inp.focus(); }, 100);
+}
+
+async function verifyDriverPin() {
+  const pin = (document.getElementById('driver-pin-inp')?.value||'').trim();
+  if (!pin) return;
+  if (!selectedTripId) return;
+
+  const trip = matchedTrips.find(t => t._id === selectedTripId);
+  if (!trip) return;
+
+  // Fetch drivers_config from Firebase to verify PIN
+  try {
+    const snap = await db.ref('drivers_config').once('value');
+    const drivers = snap.val() || {};
+    // Find driver by name matching trip.driver
+    const driverEntry = Object.values(drivers).find(d =>
+      d.name && d.name.toLowerCase() === (trip.driver||'').toLowerCase()
+    );
+
+    // Check PIN — if no PIN set, allow (open access for that driver)
+    if (driverEntry && driverEntry.pin) {
+      if (String(driverEntry.pin) !== String(pin)) {
+        const err = document.getElementById('pin-err');
+        if (err) err.style.display = 'block';
+        const inp = document.getElementById('driver-pin-inp');
+        if (inp) { inp.value=''; inp.style.borderColor='#EF4444'; inp.focus(); }
+        return;
+      }
+    }
+
+    // PIN verified — set driver name and proceed
+    driverName = trip.driver;
+    const inp = document.getElementById('driver-inp');
+    if (inp) inp.value = driverName;
+    loadStoreState(trip);
+    renderCheckIn();
+  } catch(e) {
+    // Firebase error — allow through (fail open)
+    driverName = trip.driver;
+    loadStoreState(trip);
+    renderCheckIn();
+  }
 }
 
 function confirmTripSelect() {
