@@ -342,13 +342,24 @@ function renderNoTrip() {
 function renderTripSelector() {
   const options = matchedTrips.map(t => `
     <div class="trip-option ${selectedTripId===t._id?'selected':''}" onclick="selectTrip('${t._id}')">
-      <div class="trip-option-title">🚛 ${t.driver} — ${t.trip2?'Trip 2':'Trip 1'}</div>
-      <div class="trip-option-sub">${t.vt} · ${t.vid||'—'} · ${(t.storeNames||[]).length} stores</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#1CE783,#17B865);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0">${(t.driver||'?')[0].toUpperCase()}</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:#1A2332">${t.driver}</div>
+          <div style="font-size:11px;color:#9CA3AF">${t.trip2?'Trip 2':'Trip 1'} · ${t.vt} · ${t.vid||'—'}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;padding-top:4px;border-top:1px solid #F3F4F6">
+        ${(t.storeNames||[]).map(s=>`<span style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:5px;padding:2px 7px;font-size:10px;font-weight:600;color:#059652">${s.replace('QUIK_','')}</span>`).join('')}
+      </div>
     </div>`).join('');
 
   document.getElementById('main-content').innerHTML = `
     <div class="trip-selector">
-      <label class="driver-label">Select your trip</label>
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:#1A2332">Select your name below</div>
+        <div style="font-size:11px;color:#9CA3AF;margin-top:3px">Only your assigned trip will work with your PIN</div>
+      </div>
       ${options}
     </div>
     <div id="pin-section" style="display:none;margin-top:12px">
