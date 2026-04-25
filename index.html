@@ -694,7 +694,6 @@ async function verifyLocation(actionLabel) {
 }
 
 // ── SEQUENTIAL CHECK-IN CHECK ────────────────────────────────
-// Driver cannot arrive at new store if they have a pending check-in elsewhere
 async function checkSequential() {
   const driver = getDriverName();
   if (!driver || driver === 'Driver') return { ok: true };
@@ -705,29 +704,34 @@ async function checkSequential() {
       .orderByChild('date').equalTo(today).once('value');
     const all = snap.val() ? Object.values(snap.val()) : [];
 
-    // Filter this driver's checkins today, sorted by time
-    const mine = all
-      .filter(c => c.driver === driver)
-      .sort((a, b) => (b.ts||0) - (a.ts||0));
-
+    // This driver's checkins today
+    const mine = all.filter(c => c.driver === driver);
     if (!mine.length) return { ok: true };
 
-    // Find latest checkin at a DIFFERENT store
-    const lastOther = mine.find(c => c.store && c.store !== STORE);
-    if (!lastOther) return { ok: true };
+    // Build per-store last action map
+    const storeLastAction = {};
+    mine.forEach(c => {
+      if (!c.store || c.store === STORE) return;
+      const existing = storeLastAction[c.store];
+      if (!existing || (c.ts||0) > (existing.ts||0)) {
+        storeLastAction[c.store] = c;
+      }
+    });
 
-    // If last action at another store is NOT 'departed', block
-    if (lastOther.action !== 'departed') {
-      return {
-        ok: false,
-        blockedAt: lastOther.store.replace('QUIK_', ''),
-        action: lastOther.action,
-      };
+    // Check if ANY other store has arrived/completed but NOT departed
+    for (const [store, c] of Object.entries(storeLastAction)) {
+      if (c.action === 'arrived' || c.action === 'completed') {
+        return {
+          ok: false,
+          blockedAt: store.replace('QUIK_', ''),
+          action: c.action,
+        };
+      }
     }
     return { ok: true };
   } catch(e) {
     console.warn('Sequential check failed:', e);
-    return { ok: true }; // fail open
+    return { ok: true };
   }
 }
 
@@ -757,8 +761,8 @@ async function markArrived() {
 }
 
 async function markDeparted() {
-  const ok = await verifyLocation('Departed');
-  if (!ok) return;
+  // No GPS check on departure — driver should always be able to leave
+  // GPS was blocking drivers from departing if signal was weak
   const time = nowTime();
   const driver = getDriverName();
   storeState.dep = time;
