@@ -300,13 +300,30 @@ function init() {
   // Listen to trips in real-time
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
+
+    // Get yesterday's date
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const YESTERDAY = yesterday.toISOString().split('T')[0];
+
     matchedTrips = Object.entries(data)
       .map(([id, t]) => ({ ...t, _id: id }))
-      .filter(t =>
-        t.date === DATE &&
-        Array.isArray(t.storeNames) &&
-        t.storeNames.includes(STORE)
-      );
+      .filter(t => {
+        // Must include this store
+        if (!Array.isArray(t.storeNames) || !t.storeNames.includes(STORE)) return false;
+        // Trip must not be already fully Completed
+        if (t.status === 'Completed') return false;
+        // Accept: today's trip, yesterday's trip (night runs), or any In Transit trip
+        return t.date === DATE ||
+               t.date === YESTERDAY ||
+               t.status === 'In Transit';
+      })
+      // Sort: today first, then by date desc
+      .sort((a,b) => {
+        if (a.date === DATE && b.date !== DATE) return -1;
+        if (b.date === DATE && a.date !== DATE) return 1;
+        return (b.date||'').localeCompare(a.date||'');
+      });
 
     if (matchedTrips.length === 0) {
       renderNoTrip();
@@ -354,7 +371,7 @@ function renderTripSelector() {
         <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#1CE783,#17B865);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff;flex-shrink:0">${(t.driver||'?')[0].toUpperCase()}</div>
         <div>
           <div style="font-size:15px;font-weight:800;color:#1A2332">${t.driver}</div>
-          <div style="font-size:11px;color:#9CA3AF">${t.trip2?'Trip 2':'Trip 1'} · ${t.vt} · ${t.vid||'—'}</div>
+          <div style="font-size:11px;color:#9CA3AF">${t.trip2?'Trip 2':'Trip 1'} · ${t.vt} · ${t.vid||'—'}${t.date!==DATE?` · <span style="color:#F97316;font-weight:600">${t.date}</span>`:''}</div>
         </div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;padding-top:4px;border-top:1px solid #F3F4F6">
