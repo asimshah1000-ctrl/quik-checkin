@@ -70,7 +70,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 <div class="page">
   <div class="hdr">
     <div class="logo">
-      <div style="width:32px;height:32px;flex-shrink:0"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="cg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#7AFFD4"/><stop offset="100%" stop-color="#1CE783"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#cg)"/><path d="M 72 58 A 26 26 0 1 1 72 42" stroke="#0D4A2A" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="36" cy="34" r="7" fill="#0D4A2A"/><rect x="54" y="22" width="11" height="16" rx="3" fill="#0D4A2A" transform="rotate(20,59,30)"/></svg></div>
+      <div style="width:36px;height:36px;flex-shrink:0"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="cql" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6EFFD0"/><stop offset="100%" stop-color="#1CE783"/></linearGradient></defs><rect width="200" height="200" rx="44" fill="url(#cql)"/><path d="M 142 90 A 54 54 0 1 0 142 118" stroke="#0B3D20" stroke-width="28" fill="none" stroke-linecap="round"/><circle cx="70" cy="62" r="14" fill="#0B3D20"/><rect x="108" y="36" width="22" height="34" rx="10" fill="#0B3D20" transform="rotate(22,119,53)"/></svg></div>
       <span style="color:#1A2332">Careem</span><span style="color:#1CE783;margin-left:4px">Quik</span>
     </div>
     <div class="hdr-right" id="page-badge-small">Warehouse</div>
@@ -135,11 +135,25 @@ function init() {
 
 // ── ENTRANCE MODE ─────────────────────────────────────
 function loadEntranceMode() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const YESTERDAY = yesterday.toISOString().split('T')[0];
+
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
     trips = Object.entries(data)
       .map(([id,t]) => ({...t, _id:id}))
-      .filter(t => t.date === TODAY);
+      .filter(t => {
+        // Must not be completed
+        if (t.status === 'Completed') return false;
+        // Accept today's trips, yesterday's trips, or any In Transit
+        return t.date === TODAY || t.date === YESTERDAY || t.status === 'In Transit';
+      })
+      .sort((a,b) => {
+        if (a.date === TODAY && b.date !== TODAY) return -1;
+        if (b.date === TODAY && a.date !== TODAY) return 1;
+        return (b.date||'').localeCompare(a.date||'');
+      });
     renderEntrance();
   });
 }
@@ -169,7 +183,7 @@ function renderEntrance() {
             <div style="font-size:20px">${t.trip2?'🔄':'🚛'}</div>
             <div style="flex:1">
               <div class="dname">${t.driver||'—'} <span style="font-size:9px;color:var(--muted);font-weight:400">${t.trip2?'(2nd trip)':''}</span></div>
-              <div class="dvid">${t.vid||'—'} · ${(t.storeNames||[]).length} stores</div>
+              <div class="dvid">${t.vid||'—'} · ${(t.storeNames||[]).length} stores${t.date!==TODAY?` · <span style="color:#F97316">${t.date}</span>`:''}</div>
             </div>
             <div class="dstatus" style="color:${statusColor}">${statusLabel}</div>
           </div>`;
