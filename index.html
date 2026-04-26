@@ -715,34 +715,41 @@ async function checkSequential() {
   const driver = getDriverName();
   if (!driver || driver === 'Driver') return { ok: true };
 
-  const today = nowDate();
   try {
-    const snap = await db.ref('checkins')
-      .orderByChild('date').equalTo(today).once('value');
-    const all = snap.val() ? Object.values(snap.val()) : [];
+    // Get last 2 days of checkins to cover overnight trips
+    const today = nowDate();
+    const yest  = new Date(); yest.setDate(yest.getDate()-1);
+    const yesterday = yest.toISOString().split('T')[0];
 
-    // This driver's checkins today
-    const mine = all.filter(c => c.driver === driver);
-    if (!mine.length) return { ok: true };
+    const [snapT, snapY] = await Promise.all([
+      db.ref('checkins').orderByChild('date').equalTo(today).once('value'),
+      db.ref('checkins').orderByChild('date').equalTo(yesterday).once('value'),
+    ]);
 
-    // Build per-store last action map
+    const all = [
+      ...(snapT.val() ? Object.values(snapT.val()) : []),
+      ...(snapY.val() ? Object.values(snapY.val()) : []),
+    ];
+
+    // This driver's checkins only, excluding current store
+    const mine = all.filter(c => c.driver === driver && c.store && c.store !== STORE);
+
+    // Per-store: pick the record with highest ts — fallback to time string comparison
     const storeLastAction = {};
     mine.forEach(c => {
-      if (!c.store || c.store === STORE) return;
       const existing = storeLastAction[c.store];
-      if (!existing || (c.ts||0) > (existing.ts||0)) {
-        storeLastAction[c.store] = c;
-      }
+      if (!existing) { storeLastAction[c.store] = c; return; }
+
+      // Compare by ts first, then by date+time string as fallback
+      const cScore   = (c.ts||0) || ((c.date||'')+' '+(c.time||''));
+      const exScore  = (existing.ts||0) || ((existing.date||'')+' '+(existing.time||''));
+      if (cScore > exScore) storeLastAction[c.store] = c;
     });
 
-    // Check if ANY other store has arrived/completed but NOT departed
+    // Block only if last action at another store is NOT departed
     for (const [store, c] of Object.entries(storeLastAction)) {
       if (c.action === 'arrived' || c.action === 'completed') {
-        return {
-          ok: false,
-          blockedAt: store.replace('QUIK_', ''),
-          action: c.action,
-        };
+        return { ok: false, blockedAt: store.replace('QUIK_',''), action: c.action };
       }
     }
     return { ok: true };
