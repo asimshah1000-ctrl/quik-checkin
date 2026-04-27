@@ -137,8 +137,6 @@ function init() {
 function loadEntranceMode() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const YESTERDAY = yesterday.toISOString().split('T')[0];
-
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
     trips = Object.entries(data)
@@ -146,14 +144,11 @@ function loadEntranceMode() {
       .filter(t => {
         // Must not be completed
         if (t.status === 'Completed') return false;
-        // Accept today's trips, yesterday's trips, or any In Transit
-        return t.date === TODAY || t.date === YESTERDAY || t.status === 'In Transit';
+        // ✅ Use orderDate if available, fallback to trip date
+        const tripDate = t.orderDate || t.date || '';
+        return tripDate === TODAY;
       })
-      .sort((a,b) => {
-        if (a.date === TODAY && b.date !== TODAY) return -1;
-        if (b.date === TODAY && a.date !== TODAY) return 1;
-        return (b.date||'').localeCompare(a.date||'');
-      });
+      .sort((a,b) => (a.driver||'').localeCompare(b.driver||''));
     renderEntrance();
   });
 }
