@@ -164,6 +164,11 @@ function renderEntrance() {
     return;
   }
 
+  // ✅ Auto-reset: if selected trip was deleted, clear selection
+  if (selectedTripId && !trips.find(t => t._id === selectedTripId)) {
+    selectedTripId = null;
+  }
+
   const selected = trips.find(t => t._id === selectedTripId);
 
   let html = `
