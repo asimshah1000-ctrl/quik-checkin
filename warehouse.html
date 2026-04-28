@@ -144,9 +144,8 @@ function loadEntranceMode() {
       .filter(t => {
         // Must not be completed
         if (t.status === 'Completed') return false;
-        // ✅ Use orderDate if available, fallback to trip date
-        const tripDate = t.orderDate || t.date || '';
-        return tripDate === TODAY;
+        // ✅ Use trip date only (not orderDate) — driver scans on trip date
+        return t.date === TODAY;
       })
       .sort((a,b) => (a.driver||'').localeCompare(b.driver||''));
     renderEntrance();
