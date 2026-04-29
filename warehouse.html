@@ -144,8 +144,11 @@ function loadEntranceMode() {
       .filter(t => {
         // Must not be completed
         if (t.status === 'Completed') return false;
-        // ✅ Use trip date only (not orderDate) — driver scans on trip date
-        return t.date === TODAY;
+        // Show today's trips + yesterday's (trips made previous day for today's dispatch)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const YESTERDAY = yesterday.toISOString().split('T')[0];
+        return (t.date === TODAY || t.date === YESTERDAY) && t.status !== 'Completed';
       })
       .sort((a,b) => (a.driver||'').localeCompare(b.driver||''));
     renderEntrance();
