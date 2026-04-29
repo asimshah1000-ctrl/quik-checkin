@@ -301,7 +301,6 @@ function init() {
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
 
-    // Get yesterday's date
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const YESTERDAY = yesterday.toISOString().split('T')[0];
@@ -309,16 +308,11 @@ function init() {
     matchedTrips = Object.entries(data)
       .map(([id, t]) => ({ ...t, _id: id }))
       .filter(t => {
-        // Must include this store
         if (!Array.isArray(t.storeNames) || !t.storeNames.includes(STORE)) return false;
-        // Trip must not be already fully Completed
         if (t.status === 'Completed') return false;
-        // Accept: today's trip, yesterday's trip (night runs), or any In Transit trip
-        return t.date === DATE ||
-               t.date === YESTERDAY ||
-               t.status === 'In Transit';
+        // Only show today's or yesterday's trips — NOT old "In Transit" trips
+        return t.date === DATE || t.date === YESTERDAY;
       })
-      // Sort: today first, then by date desc
       .sort((a,b) => {
         if (a.date === DATE && b.date !== DATE) return -1;
         if (b.date === DATE && a.date !== DATE) return 1;
