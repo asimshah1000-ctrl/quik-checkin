@@ -310,8 +310,11 @@ function init() {
       .filter(t => {
         if (!Array.isArray(t.storeNames) || !t.storeNames.includes(STORE)) return false;
         if (t.status === 'Completed') return false;
-        // Only show today's or yesterday's trips — NOT old "In Transit" trips
-        return t.date === DATE || t.date === YESTERDAY;
+        // Match on trip date OR orderDate — covers trips made yesterday for today
+        const tripDate  = t.date      || '';
+        const orderDate = t.orderDate || '';
+        return tripDate === DATE || tripDate === YESTERDAY ||
+               orderDate === DATE || orderDate === YESTERDAY;
       })
       .sort((a,b) => {
         if (a.date === DATE && b.date !== DATE) return -1;
