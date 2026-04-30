@@ -109,10 +109,19 @@ const params  = new URLSearchParams(window.location.search);
 const MODE    = params.get('mode') || 'entrance'; // 'entrance' | 'trip'
 const TRIP_ID = params.get('trip') || '';
 const WH      = params.get('wh')   || 'Own Warehouse';
-const TODAY   = new Date().toISOString().split('T')[0];
+
+// ✅ FIX 1: Always use UAE local date (UTC+4) — never raw toISOString()
+function getUAEDate(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+}
+const TODAY     = getUAEDate(0);
+const YESTERDAY = getUAEDate(-1);
+const DAY_BEFORE = getUAEDate(-2);
 
 function nowTime() {
-  return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Dubai'});
 }
 
 let trips = [];
@@ -135,20 +144,17 @@ function init() {
 
 // ── ENTRANCE MODE ─────────────────────────────────────
 function loadEntranceMode() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
     trips = Object.entries(data)
       .map(([id,t]) => ({...t, _id:id}))
       .filter(t => {
-        // Must not be completed
         if (t.status === 'Completed') return false;
-        // Show today's trips + yesterday's (trips made previous day for today's dispatch)
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const YESTERDAY = yesterday.toISOString().split('T')[0];
-        return (t.date === TODAY || t.date === YESTERDAY) && t.status !== 'Completed';
+        const tripDate  = t.date      || '';
+        const orderDate = t.orderDate || '';
+        // ✅ FIX 2: 3-day window (today + yesterday + day before) — handles overnight trips
+        const inWindow = [TODAY, YESTERDAY, DAY_BEFORE];
+        return inWindow.includes(tripDate) || inWindow.includes(orderDate);
       })
       .sort((a,b) => (a.driver||'').localeCompare(b.driver||''));
     renderEntrance();
@@ -300,15 +306,18 @@ async function markWH(action) {
   if (!gps.ok) return;
 
   const time = nowTime();
+  const trip = trips.find(t=>t._id===selectedTripId);
   await db.ref(`trips/${selectedTripId}/whCheckin/${action}`).set(time);
   if (action === 'departed') {
     await db.ref(`trips/${selectedTripId}/status`).set('In Transit');
     await db.ref(`trips/${selectedTripId}/dispatch`).set(time);
   }
+  // ✅ FIX 3: Save checkin with trip's orderDate (not UTC today) — ensures dashboard filter match
+  const checkinDate = trip?.orderDate || trip?.date || TODAY;
   await db.ref('wh_checkins').push({
     tripId: selectedTripId,
-    driver: trips.find(t=>t._id===selectedTripId)?.driver || '—',
-    action, time, date: TODAY, ts: Date.now()
+    driver: trip?.driver || '—',
+    action, time, date: checkinDate, ts: Date.now()
   });
   const msgs = {
     arrived:  { emoji:'🏭', title:'Warehouse Arrived!',  sub:`Time recorded: ${time}\nDashboard updated ✅` },
