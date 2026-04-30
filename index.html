@@ -265,7 +265,17 @@ async function withGPS(actionFn) {
 }
 const params  = new URLSearchParams(window.location.search);
 const STORE   = params.get('store') || '';
-const DATE    = params.get('date')  || new Date().toISOString().split('T')[0];
+const DATE    = params.get('date')  || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+
+// ✅ FIX 1: UAE local date helper — never raw toISOString()
+function getUAEDate(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+}
+const UAE_TODAY     = getUAEDate(0);
+const UAE_YESTERDAY = getUAEDate(-1);
+const UAE_DAY_BEFORE = getUAEDate(-2);
 
 // State
 let matchedTrips = [];
@@ -275,10 +285,11 @@ let storeState = { arr: null, dep: null, completed: false, photoURL: null };
 
 // ── Format time now ───────────────────────────────────────────
 function nowTime() {
-  return new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+  return new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'Asia/Dubai' });
 }
 function nowDate() {
-  return new Date().toISOString().split('T')[0];
+  // ✅ FIX: UAE local date
+  return getUAEDate(0);
 }
 
 // ── Find trips for this store + today ─────────────────────────
@@ -301,24 +312,24 @@ function init() {
   db.ref('trips').on('value', snap => {
     const data = snap.val() || {};
 
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const YESTERDAY = yesterday.toISOString().split('T')[0];
+    // ✅ FIX 2: 3-day window using UAE dates — handles overnight + midnight crossings
+    const inWindow = [DATE, UAE_TODAY, UAE_YESTERDAY, UAE_DAY_BEFORE];
 
     matchedTrips = Object.entries(data)
       .map(([id, t]) => ({ ...t, _id: id }))
       .filter(t => {
         if (!Array.isArray(t.storeNames) || !t.storeNames.includes(STORE)) return false;
         if (t.status === 'Completed') return false;
-        // Match on trip date OR orderDate — covers trips made yesterday for today
         const tripDate  = t.date      || '';
         const orderDate = t.orderDate || '';
-        return tripDate === DATE || tripDate === YESTERDAY ||
-               orderDate === DATE || orderDate === YESTERDAY;
+        // Match on trip date OR orderDate within the 3-day window
+        return inWindow.includes(tripDate) || inWindow.includes(orderDate);
       })
       .sort((a,b) => {
-        if (a.date === DATE && b.date !== DATE) return -1;
-        if (b.date === DATE && a.date !== DATE) return 1;
+        // Prefer trips whose date/orderDate matches today
+        const aScore = (a.date===UAE_TODAY||a.orderDate===UAE_TODAY) ? 0 : 1;
+        const bScore = (b.date===UAE_TODAY||b.orderDate===UAE_TODAY) ? 0 : 1;
+        if (aScore !== bScore) return aScore - bScore;
         return (b.date||'').localeCompare(a.date||'');
       });
 
@@ -593,10 +604,17 @@ function timeDiffCk(t1,t2) {
 async function loadRegionalStatus() {
   const el = document.getElementById('regional-status');
   if (!el) return;
-  const today = nowDate();
+  const today = getUAEDate(0);
   try {
-    const snap = await db.ref('checkins').orderByChild('date').equalTo(today).once('value');
-    const all = snap.val() ? Object.values(snap.val()) : [];
+    // ✅ FIX: Query today's UAE date, also check yesterday for overnight trips
+    const [snapToday, snapYest] = await Promise.all([
+      db.ref('checkins').orderByChild('date').equalTo(today).once('value'),
+      db.ref('checkins').orderByChild('date').equalTo(getUAEDate(-1)).once('value'),
+    ]);
+    const all = [
+      ...Object.values(snapToday.val()||{}),
+      ...Object.values(snapYest.val()||{}),
+    ];
     const smap = {};
     all.forEach(c => {
       if (!c.store) return;
@@ -756,7 +774,7 @@ async function markArrived() {
   await db.ref(`trips/${selectedTripId}/storeTimes/${STORE}/driver`).set(driver);
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'arrived',
-    time, date: nowDate(), ts: Date.now()
+    time, date: matchedTrips.find(t=>t._id===selectedTripId)?.orderDate || matchedTrips.find(t=>t._id===selectedTripId)?.date || nowDate(), ts: Date.now()
   });
   showSuccess('📍', 'Arrived!', `${STORE.replace('QUIK_','')} — ${time}\nDashboard updated ✅`);
   renderCheckIn();
@@ -803,7 +821,7 @@ async function markDeparted() {
   await db.ref().update(updates);
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'departed',
-    time, date: nowDate(), ts: Date.now(), photoURL: photoURL||null,
+    time, date: matchedTrips.find(t=>t._id===selectedTripId)?.orderDate || matchedTrips.find(t=>t._id===selectedTripId)?.date || nowDate(), ts: Date.now(), photoURL: photoURL||null,
   });
 
   pendingPhotoFile = null;
@@ -901,7 +919,7 @@ async function markCompleted() {
 
   await db.ref('checkins').push({
     tripId: selectedTripId, store: STORE, driver, action: 'completed',
-    time, date: nowDate(), ts: Date.now(), photoURL: photoURL||null,
+    time, date: matchedTrips.find(t=>t._id===selectedTripId)?.orderDate || matchedTrips.find(t=>t._id===selectedTripId)?.date || nowDate(), ts: Date.now(), photoURL: photoURL||null,
   });
 
   pendingPhotoFile = null;
